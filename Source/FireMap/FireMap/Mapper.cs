@@ -81,40 +81,96 @@ namespace FireMap
 	{
 ");
 
-			foreach(var classSymbol in receiver.Classes)
+			foreach(var classSyntax in receiver.Classes)
 			{
-				var model = compilation.GetSemanticModel(classSymbol.SyntaxTree);
-				var symbol = model.GetSymbolInfo(classSymbol);
+				var classModel = compilation.GetSemanticModel(classSyntax.SyntaxTree);
+				//var classSymbol = classModel.GetSymbolInfo(classSyntax);
+				var classSymbol = classModel.GetDeclaredSymbol(classSyntax);
+				var classType = classModel.GetTypeInfo(classSyntax);
 
-				if (!symbol.Symbol.Equals(symbol.Symbol.ContainingNamespace, SymbolEqualityComparer.Default))
+				// Only work with top-level classes. Can remove if we want to support nested classes
+				if (!classSymbol.ContainingSymbol.Equals(classSymbol.ContainingNamespace, SymbolEqualityComparer.Default))
 				{
 					continue;
-					// Could issue a diagnostic message that the class must be top level
+					// TODO: Could issue a diagnostic message that the class must be top level
 				}
 
-				var attributeSymbol = symbol.Symbol.GetAttributes().FirstOrDefault(a => a.AttributeClass.MetadataName == "FireMap.MapClassAttribute");
+				var classAttributeData = classSymbol.GetAttributes().FirstOrDefault(a => a.AttributeClass.Equals(classAttributeSymbol, SymbolEqualityComparer.Default));
 
-				if (attributeSymbol == null)
+				var members = classSymbol.GetMembers();
+
+				if (classAttributeData == null && !members.Any(s => s.GetAttributes().Any(a => a.AttributeClass.Equals(propAttributeSymbol, SymbolEqualityComparer.Default))))
 					continue;
 
-				foreach (var member in )
+				var attributeArguments = classAttributeData.ConstructorArguments;
+				var typeAttributeArgument = attributeArguments.First();
+				var mappingType = (typeAttributeArgument.Value as INamedTypeSymbol).OriginalDefinition;
+				//var mappingType = typeAttributeArgument.Value.GetType();
+
+				if (!compilation.ContainsSymbolsWithName(mappingType.MetadataName))
 				{
-					var memberSymbol = model.GetDeclaredSymbol(member);
-
-					var kind = member.Kind();
-					if (kind == SyntaxKind.FieldDeclaration)
-					{
-
-					}
-					else if (kind == SyntaxKind.PropertyDeclaration)
-					{
-
-					}
-
-					// foreach over the members in the class
-					// if it's a field or property, then add it to the list of members.
-					// If it has FireMap attributes, then use those to determine types
+					continue;
+					// TODO: Output a diagnostic message here that the class couldn't be found
 				}
+
+				var mappingSymbol = compilation.GetTypeByMetadataName(mappingType.ToDisplayString());
+
+				if (mappingSymbol == null)
+				{
+					continue;
+					// TODO: Output a diagnostic message here that the class couldn't be found.
+				}
+
+				var mappingMembers = mappingSymbol.GetMembers();
+
+				var methodSignature = $"{mappingType.ToDisplayString()} To{mappingType.Name}({classSymbol.ToDisplayString()} source)";
+				interfaceSource.AppendLine($@"
+		/// <summary>Convert from {classSymbol.ToDisplayString()} to {mappingType.ToDisplayString()}</summary>
+		{methodSignature};
+");
+
+				classSource.AppendLine($@"
+		public virtual {methodSignature} => new {mappingType.ToDisplayString()}
+		{{
+");
+				var memberMappings = new List<string>();
+
+				foreach (var member in members)
+				{
+					if (member.IsImplicitlyDeclared || member.IsStatic || member.DeclaredAccessibility != Accessibility.Public
+						|| (member.Kind != SymbolKind.Field && member.Kind != SymbolKind.Property))
+						continue;
+
+					var memberAttribute = member.GetAttributes().FirstOrDefault(a =>
+					{
+						var attributeClass = a.ConstructorArguments.First();
+						return a.AttributeClass.Equals(propAttributeSymbol, SymbolEqualityComparer.Default)
+							&& SymbolEqualityComparer.Default.Equals(attributeClass.Type, classType.Type);
+					});
+
+					if (memberAttribute != null)
+					{
+						var name = memberAttribute.ConstructorArguments.Last().Value as string;
+
+						var mappingMember = mappingMembers.FirstOrDefault(mm => mm.Name == name);
+
+						if (mappingMember != null)
+							memberMappings.Add($"{mappingMember.Name} = source.{member.ToDisplayString()}");
+					}
+					else
+					{
+						var mappingMember = mappingMembers.FirstOrDefault(mm => mm.Name == member.Name);
+
+						if (mappingMember != null)
+							memberMappings.Add($"{member.Name} = source.{member.Name}");
+					}
+				}
+
+				classSource.AppendLine($@"
+				{string.Join(@",
+", memberMappings)}
+		}};
+");
 			}
 
 			classSource.AppendLine(@"
@@ -123,6 +179,9 @@ namespace FireMap
 			interfaceSource.AppendLine(@"
 	}
 }");
+
+			context.AddSource("IMapping.cs", SourceText.From(interfaceSource.ToString(), Encoding.UTF8));
+			context.AddSource("Mapping.cs", SourceText.From(classSource.ToString(), Encoding.UTF8));
 		}
 	}
 }
