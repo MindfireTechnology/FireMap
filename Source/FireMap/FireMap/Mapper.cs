@@ -95,6 +95,7 @@ namespace FireMap
 					// TODO: Could issue a diagnostic message that the class must be top level
 				}
 
+				// TODO: Rather than just get the first, we need to do all the stuff below for each attribute to support multiple mappings
 				var classAttributeData = classSymbol.GetAttributes().FirstOrDefault(a => a.AttributeClass.Equals(classAttributeSymbol, SymbolEqualityComparer.Default));
 
 				var members = classSymbol.GetMembers();
