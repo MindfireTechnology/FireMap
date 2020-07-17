@@ -20,6 +20,7 @@ namespace FireMap
 	public sealed class MapClassToAttribute : Attribute
 	{
 		public Type MappingType { get; }
+		public bool Reverse {get; set; }
 
 		public MapClassToAttribute(Type mappingType)
 		{
@@ -249,7 +250,9 @@ namespace FireMap
 					continue;
 
 				var memberMap = CreatePropertyMap(member, destinationSymbol, destinationMembers, propAttributeSymbol);
-				memberMappings.Add(memberMap);
+
+				if (!string.IsNullOrWhiteSpace(memberMap))
+					memberMappings.Add(memberMap);
 			}
 
 			classBuilder.AppendLine($@"

@@ -10,6 +10,7 @@ namespace Tester
 			var mapper = new Mapper();
 
 			RunSimpleTests(mapper);
+			RunCustomMapperTests();
 
 			Console.Write("Press enter to continue...");
 			Console.ReadLine();
@@ -22,6 +23,16 @@ namespace Tester
 			simpleTests.SimpleRenameMapping();
 
 			Console.WriteLine("Passed all simple tests");
+		}
+
+		static void RunCustomMapperTests()
+		{
+			var customMapper = new CustomMapper();
+
+			var customTests = new CustomMapperTests(customMapper);
+			customTests.MapNames();
+
+			Console.WriteLine("Passed all custom mapper tests");
 		}
 	}
 }
