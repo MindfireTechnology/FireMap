@@ -1,11 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
-using FireMap;
 
-namespace Tester
+namespace Tester.Models
 {
-	public class User
+	public class SimpleUserEntity
 	{
 		public int Id { get; set; }
 		public string Name { get; set; }

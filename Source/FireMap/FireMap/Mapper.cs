@@ -1,5 +1,6 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using System;
 using System.Collections.Generic;
@@ -11,36 +12,69 @@ namespace FireMap
 	[Generator]
 	public class Mapper : ISourceGenerator
 	{
-		protected const string ClassAttributeText = @"
+		protected const string MapClassToAttributeText = @"
 using System;
 namespace FireMap
 {
 	[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
-	public sealed class MapClassAttribute : Attribute
+	public sealed class MapClassToAttribute : Attribute
 	{
 		public Type MappingType { get; }
 
-		public MapClassAttribute(Type mappingType)
+		public MapClassToAttribute(Type mappingType)
 		{
 			MappingType = mappingType;
 		}
 	}
 }
 ";
-		protected const string PropertyAttributeText = @"
+		protected const string MapClassFromAttributeText = @"
+using System;
+namespace FireMap
+{
+	[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = true)]
+	public sealed class MapClassFromAttribute : Attribute
+	{
+		public Type MappingType { get; }
+
+		public MapClassFromAttribute(Type mappingType)
+		{
+			MappingType = mappingType;
+		}
+	}
+}
+";
+
+		protected const string MapPropertyToAttributeText = @"
 using System;
 namespace FireMap
 {
 	[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
-	public sealed class MapMemberAttribute : Attribute
+	public sealed class MapMemberToAttribute : Attribute
 	{
 		public Type MappingType { get; }
-		public string Name { get; }
+		public string Name { get; set; } = """";
 
-		public MapMemberAttribute(Type mappingType, string name = """")
+		public MapMemberToAttribute(Type mappingType)
 		{
 			MappingType = mappingType;
-			Name = name;
+		}
+	}
+}
+";
+		protected const string MapPropertyFromAttributeText = @"
+using System;
+namespace FireMap
+{
+	[AttributeUsage(AttributeTargets.Property | AttributeTargets.Field, AllowMultiple = true, Inherited = true)]
+	public sealed class MapMemberFromAttribute : Attribute
+	{
+		public Type MappingType { get; }
+		public string Name { get; set; } = """";
+
+		public MapMemberFromAttribute(Type mappingType)
+		{
+			MappingType = mappingType;
 		}
 	}
 }
@@ -53,20 +87,20 @@ namespace FireMap
 
 		public void Execute(SourceGeneratorContext context)
 		{
-			context.AddSource("MapClassAttribute", SourceText.From(ClassAttributeText, Encoding.UTF8));
-			context.AddSource("MapMemberAttribute", SourceText.From(PropertyAttributeText, Encoding.UTF8));
+			context.AddSource("MapClassToAttribute", SourceText.From(MapClassToAttributeText, Encoding.UTF8));
+			context.AddSource("MapMemberToAttribute", SourceText.From(MapPropertyToAttributeText, Encoding.UTF8));
 
 			if (!(context.SyntaxReceiver is SyntaxReceiver receiver))
 				return;
 
 			// create a new compilation that contains the attribute
 			var options = (context.Compilation as CSharpCompilation).SyntaxTrees[0].Options as CSharpParseOptions;
-			var compilation = context.Compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(SourceText.From(ClassAttributeText, Encoding.UTF8), options));
-			compilation = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(SourceText.From(PropertyAttributeText, Encoding.UTF8), options));
+			var compilation = context.Compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(SourceText.From(MapClassToAttributeText, Encoding.UTF8), options));
+			compilation = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(SourceText.From(MapPropertyToAttributeText, Encoding.UTF8), options));
 
 			// get the newly bound attribute
-			var classAttributeSymbol = compilation.GetTypeByMetadataName("FireMap.MapClassAttribute");
-			var propAttributeSymbol = compilation.GetTypeByMetadataName("FireMap.MapMemberAttribute");
+			var classAttributeSymbol = compilation.GetTypeByMetadataName("FireMap.MapClassToAttribute");
+			var propAttributeSymbol = compilation.GetTypeByMetadataName("FireMap.MapMemberToAttribute");
 
 			var classSource = new StringBuilder(@"
 namespace FireMap
@@ -83,95 +117,10 @@ namespace FireMap
 
 			foreach(var classSyntax in receiver.Classes)
 			{
-				var classModel = compilation.GetSemanticModel(classSyntax.SyntaxTree);
-				//var classSymbol = classModel.GetSymbolInfo(classSyntax);
-				var classSymbol = classModel.GetDeclaredSymbol(classSyntax);
-				var classType = classModel.GetTypeInfo(classSyntax);
+				var (classMehthods, interfaceMethods) = BuildMapMethods(compilation, classSyntax, classAttributeSymbol, propAttributeSymbol);
 
-				// Only work with top-level classes. Can remove if we want to support nested classes
-				if (!classSymbol.ContainingSymbol.Equals(classSymbol.ContainingNamespace, SymbolEqualityComparer.Default))
-				{
-					continue;
-					// TODO: Could issue a diagnostic message that the class must be top level
-				}
-
-				// TODO: Rather than just get the first, we need to do all the stuff below for each attribute to support multiple mappings
-				var classAttributeData = classSymbol.GetAttributes().FirstOrDefault(a => a.AttributeClass.Equals(classAttributeSymbol, SymbolEqualityComparer.Default));
-
-				var members = classSymbol.GetMembers();
-
-				if (classAttributeData == null && !members.Any(s => s.GetAttributes().Any(a => a.AttributeClass.Equals(propAttributeSymbol, SymbolEqualityComparer.Default))))
-					continue;
-
-				var attributeArguments = classAttributeData.ConstructorArguments;
-				var typeAttributeArgument = attributeArguments.First();
-				var mappingType = (typeAttributeArgument.Value as INamedTypeSymbol).OriginalDefinition;
-				//var mappingType = typeAttributeArgument.Value.GetType();
-
-				if (!compilation.ContainsSymbolsWithName(mappingType.MetadataName))
-				{
-					continue;
-					// TODO: Output a diagnostic message here that the class couldn't be found
-				}
-
-				var mappingSymbol = compilation.GetTypeByMetadataName(mappingType.ToDisplayString());
-
-				if (mappingSymbol == null)
-				{
-					continue;
-					// TODO: Output a diagnostic message here that the class couldn't be found.
-				}
-
-				var mappingMembers = mappingSymbol.GetMembers();
-
-				var methodSignature = $"{mappingType.ToDisplayString()} To{mappingType.Name}({classSymbol.ToDisplayString()} source)";
-				interfaceSource.AppendLine($@"
-		/// <summary>Convert from {classSymbol.ToDisplayString()} to {mappingType.ToDisplayString()}</summary>
-		{methodSignature};
-");
-
-				classSource.AppendLine($@"
-		public virtual {methodSignature} => new {mappingType.ToDisplayString()}
-		{{
-");
-				var memberMappings = new List<string>();
-
-				foreach (var member in members)
-				{
-					if (member.IsImplicitlyDeclared || member.IsStatic || member.DeclaredAccessibility != Accessibility.Public
-						|| (member.Kind != SymbolKind.Field && member.Kind != SymbolKind.Property))
-						continue;
-
-					var memberAttribute = member.GetAttributes().FirstOrDefault(a =>
-					{
-						var attributeClass = a.ConstructorArguments.First();
-						return a.AttributeClass.Equals(propAttributeSymbol, SymbolEqualityComparer.Default)
-							&& SymbolEqualityComparer.Default.Equals(attributeClass.Type, classType.Type);
-					});
-
-					if (memberAttribute != null)
-					{
-						var name = memberAttribute.ConstructorArguments.Last().Value as string;
-
-						var mappingMember = mappingMembers.FirstOrDefault(mm => mm.Name == name);
-
-						if (mappingMember != null)
-							memberMappings.Add($"{mappingMember.Name} = source.{member.ToDisplayString()}");
-					}
-					else
-					{
-						var mappingMember = mappingMembers.FirstOrDefault(mm => mm.Name == member.Name);
-
-						if (mappingMember != null)
-							memberMappings.Add($"{member.Name} = source.{member.Name}");
-					}
-				}
-
-				classSource.AppendLine($@"
-				{string.Join(@",
-", memberMappings)}
-		}};
-");
+				classSource.AppendLine(classMehthods);
+				interfaceSource.AppendLine(interfaceMethods);
 			}
 
 			classSource.AppendLine(@"
@@ -183,6 +132,168 @@ namespace FireMap
 
 			context.AddSource("IMapping.cs", SourceText.From(interfaceSource.ToString(), Encoding.UTF8));
 			context.AddSource("Mapping.cs", SourceText.From(classSource.ToString(), Encoding.UTF8));
+		}
+
+		/// <summary>
+		/// Builds the methods that will map the source to the destinations it specifies
+		/// </summary>
+		/// <param name="compilation"></param>
+		/// <param name="sourceSyntax"></param>
+		/// <param name="classAttributeSymbol"></param>
+		/// <param name="propAttributeSymbol"></param>
+		/// <param name="classSource"></param>
+		/// <param name="interfaceSource"></param>
+		protected (string classMethods, string interfaceMethods) BuildMapMethods(Compilation compilation, TypeDeclarationSyntax sourceSyntax, INamedTypeSymbol classAttributeSymbol, INamedTypeSymbol propAttributeSymbol)
+		{
+			var classBuilder = new StringBuilder();
+			var interfaceBuilder = new StringBuilder();
+
+			var sourceModel = compilation.GetSemanticModel(sourceSyntax.SyntaxTree);
+			var sourceSymbol = sourceModel.GetDeclaredSymbol(sourceSyntax);
+
+			// Only work with top - level classes. Can remove if we want to support nested classes
+			if (!sourceSymbol.ContainingSymbol.Equals(sourceSymbol.ContainingNamespace, SymbolEqualityComparer.Default))
+			{
+				return (string.Empty, string.Empty);
+				// TODO: Could issue a diagnostic message that the class must be top level
+			}
+
+			var destinations = GetMappingPairsFromAttributes(sourceSymbol, classAttributeSymbol, propAttributeSymbol);
+
+			foreach(var destination in destinations)
+			{
+				var mappingSymbol = compilation.GetTypeByMetadataName(destination.ToDisplayString());
+
+				if (mappingSymbol == null)
+				{
+					// TODO: Output a diagnostic message about the type not being found?
+					continue;
+				}
+
+				var (classMethod, interfaceMethod) = CreateClassMap(sourceSymbol, destination, propAttributeSymbol);
+
+				classBuilder.AppendLine(classMethod);
+				interfaceBuilder.AppendLine(interfaceMethod);
+			}
+
+			return (classBuilder.ToString(), interfaceBuilder.ToString());
+		}
+
+		/// <summary>
+		/// Get the destination types from both the class level attribute and the property level attributes
+		/// </summary>
+		/// <param name="sourceSymbol">The symbol that represents the source class being mapped</param>
+		/// <param name="classAttributeSymbol">The symbol that represents the MapClassToAttribute</param>
+		/// <param name="propertyAttributeSymbol">The symbol that represents the MepMemberAttribute</param>
+		/// <returns>Collection of the destination symbols</returns>
+		protected IEnumerable<INamedTypeSymbol> GetMappingPairsFromAttributes(INamedTypeSymbol sourceSymbol, INamedTypeSymbol classAttributeSymbol, INamedTypeSymbol propertyAttributeSymbol)
+		{
+			var destinations = new HashSet<INamedTypeSymbol>();
+
+			var classAttributes = sourceSymbol.GetAttributes().Where(a => a.AttributeClass.Equals(classAttributeSymbol, SymbolEqualityComparer.Default));
+			var members = sourceSymbol.GetMembers();
+			var propertyAttributes = members.SelectMany(m => m.GetAttributes().Where(a => a.AttributeClass.Equals(propertyAttributeSymbol, SymbolEqualityComparer.Default)));
+
+			foreach(var classAttribute in classAttributes)
+			{
+				var attributeArguments = classAttribute.ConstructorArguments;
+				var typeAttributeArgument = attributeArguments.First();
+				var mappingType = (typeAttributeArgument.Value as INamedTypeSymbol).OriginalDefinition;
+
+				destinations.Add(mappingType);
+			}
+
+			foreach(var propertyAttribute in propertyAttributes)
+			{
+				var attributeArguments = propertyAttribute.ConstructorArguments;
+				var typeAttributeArgument = attributeArguments.First();
+				var mappingType = (typeAttributeArgument.Value as INamedTypeSymbol).OriginalDefinition;
+
+				destinations.Add(mappingType);
+			}
+
+			return destinations;
+		}
+
+		/// <summary>
+		/// Create the mapping method that will map the source type to the destination type
+		/// </summary>
+		/// <param name="sourceSymbol">The symbol for the source class</param>
+		/// <param name="destinationSymbol">The symbol for the destination class</param>
+		/// <param name="propAttributeSymbol">The symbol for the proprety mapping attribute</param>
+		/// <returns></returns>
+		protected (string classMethod, string interfaceMethod) CreateClassMap(INamedTypeSymbol sourceSymbol, INamedTypeSymbol destinationSymbol, INamedTypeSymbol propAttributeSymbol)
+		{
+			var classBuilder = new StringBuilder();
+			var interfaceBuilder = new StringBuilder();
+
+			var sourceMembers = sourceSymbol.GetMembers();
+			var destinationMembers = destinationSymbol.GetMembers();
+
+			var methodSignature = $"{destinationSymbol.ToDisplayString()} To{destinationSymbol.ToDisplayString().Replace(".", "_")}({sourceSymbol.ToDisplayString()} source)";
+			interfaceBuilder.AppendLine($@"
+		/// <summary>Convert from {sourceSymbol.ToDisplayString()} to {destinationSymbol.ToDisplayString()}</summary>
+		{methodSignature};
+");
+
+			classBuilder.AppendLine($@"
+		public virtual {methodSignature} => new {destinationSymbol.ToDisplayString()}
+		{{
+");
+			var memberMappings = new List<string>();
+
+			foreach (var member in sourceMembers)
+			{
+				if (member.IsImplicitlyDeclared || member.IsStatic || member.DeclaredAccessibility != Accessibility.Public
+					|| (member.Kind != SymbolKind.Field && member.Kind != SymbolKind.Property))
+					continue;
+
+				var memberMap = CreatePropertyMap(member, destinationSymbol, destinationMembers, propAttributeSymbol);
+				memberMappings.Add(memberMap);
+			}
+
+			classBuilder.AppendLine($@"
+				{string.Join(@",
+", memberMappings)}
+		}};
+");
+
+			return (classBuilder.ToString(), interfaceBuilder.ToString());
+		}
+
+		protected string CreatePropertyMap(ISymbol sourceMember, INamedTypeSymbol destinationSymbol, IEnumerable<ISymbol> destinationMembers, INamedTypeSymbol propAttributeSymbol)
+		{
+			if (!destinationMembers.Any())
+				return string.Empty;
+
+			var attributes = sourceMember.GetAttributes();
+			var memberAttribute = attributes.FirstOrDefault(a =>
+			{
+				var attributeDestinationClass = a.ConstructorArguments.First();
+				var symbol = attributeDestinationClass.Value as INamedTypeSymbol;
+
+				return a.AttributeClass.Equals(propAttributeSymbol, SymbolEqualityComparer.Default)
+					&& SymbolEqualityComparer.Default.Equals(symbol, destinationSymbol);
+			});
+
+			if (memberAttribute != null)
+			{
+				var name = memberAttribute.NamedArguments.FirstOrDefault(na => na.Key == "Name").Value.Value as string;
+
+				var mappingMember = destinationMembers.FirstOrDefault(mm => mm.Name == name);
+
+				if (mappingMember != null)
+					return $"{mappingMember.Name} = source.{sourceMember.Name}";
+			}
+			else
+			{
+				var mappingMember = destinationMembers.FirstOrDefault(mm => mm.Name == sourceMember.Name);
+
+				if (mappingMember != null)
+					return $"{sourceMember.Name} = source.{sourceMember.Name}";
+			}
+
+			return string.Empty;
 		}
 	}
 }

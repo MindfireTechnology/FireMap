@@ -7,39 +7,21 @@ namespace Tester
 	{
 		static void Main(string[] args)
 		{
-			var user = new UserTester
-			{
-				Id = 1,
-				Address = "123 Fake St",
-				City = "Springfield",
-				Name = "My User",
-				Phone = "555-555-5555",
-				ZipCode = "12345"
-			};
+			var mapper = new Mapper();
 
-			IMapper mapper = new Mapper();
-			//var entity = mapper.ToUserEntity(user);
-			var vm = mapper.ToUser(user);
+			RunSimpleTests(mapper);
 
-			Console.WriteLine($@"User Entity:
-Id: {entity.Id},
-Address: {entity.Address},
-City: {entity.City},
-Name: {entity.Name},
-Phone: {entity.Phone},
-ZipCode: {entity.ZipCode}");
+			Console.Write("Press enter to continue...");
+			Console.ReadLine();
 		}
-	}
 
-	//[MapClass(typeof(UserEntity))]
-	[MapClass(typeof(User))]
-	public class UserTester
-	{
-		public int Id { get; set; }
-		public string Name { get; set; }
-		public string Address { get; set; }
-		public string City { get; set; }
-		public string ZipCode { get; set; }
-		public string Phone { get; set; }
+		static void RunSimpleTests(IMapper mapper)
+		{
+			var simpleTests = new SimpleTests(mapper);
+			simpleTests.Simple1to1Mapping();
+			simpleTests.SimpleRenameMapping();
+
+			Console.WriteLine("Passed all simple tests");
+		}
 	}
 }

@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using FireMap;
 
-namespace Tester
+namespace Tester.Models
 {
-	public class UserEntity
+	[MapClassTo(typeof(SimpleUserViewModel))]
+	[MapClassTo(typeof(SimpleUserEntity))]
+	public class SimpleUserDTO
 	{
 		public int Id { get; set; }
 		public string Name { get; set; }
