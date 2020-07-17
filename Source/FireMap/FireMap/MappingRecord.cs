@@ -9,6 +9,6 @@ namespace FireMap
 	{
 		public INamedTypeSymbol Source { get; set; }
 		public INamedTypeSymbol Destination { get; set; }
-		public IEnumerable<KeyValuePair<string, string>> Members { get; set; }
+		public IEnumerable<(string sourceMember, string destinationMember)> Members { get; set; }
 	}
 }
