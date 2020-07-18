@@ -12,7 +12,7 @@ namespace Tester
 			RunSimpleTests(mapper);
 			RunCustomMapperTests();
 			RunReverseMapperTests(mapper);
-
+			RunMapFromTests(mapper);
 
 			Console.Write("Press enter to continue...");
 			Console.ReadLine();
@@ -44,6 +44,15 @@ namespace Tester
 			reverseMapperTests.TestReverseMapping();
 
 			Console.WriteLine("Passed all reverse mapper tests");
+		}
+
+		static void RunMapFromTests(IMapper mapper)
+		{
+			var mapFromTests = new MapFromTests(mapper);
+
+			mapFromTests.TestFromMapping();
+
+			Console.WriteLine("Passed all mapping from tests");
 		}
 	}
 }

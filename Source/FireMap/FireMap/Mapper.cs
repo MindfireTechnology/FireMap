@@ -12,7 +12,7 @@ namespace FireMap
 	[Generator]
 	public class Mapper : ISourceGenerator
 	{
-		protected const string MapClassToAttributeText = @"
+		protected const string MapClassToAttribute = @"
 using System;
 namespace FireMap
 {
@@ -29,7 +29,7 @@ namespace FireMap
 	}
 }
 ";
-		protected const string MapClassFromAttributeText = @"
+		protected const string MapClassFromAttribute = @"
 using System;
 namespace FireMap
 {
@@ -46,7 +46,7 @@ namespace FireMap
 }
 ";
 
-		protected const string MapPropertyToAttributeText = @"
+		protected const string MapMemberToAttribute = @"
 using System;
 namespace FireMap
 {
@@ -63,7 +63,7 @@ namespace FireMap
 	}
 }
 ";
-		protected const string MapPropertyFromAttributeText = @"
+		protected const string MapMemberFromAttribute = @"
 using System;
 namespace FireMap
 {
@@ -88,20 +88,26 @@ namespace FireMap
 
 		public void Execute(SourceGeneratorContext context)
 		{
-			context.AddSource("MapClassToAttribute", SourceText.From(MapClassToAttributeText, Encoding.UTF8));
-			context.AddSource("MapMemberToAttribute", SourceText.From(MapPropertyToAttributeText, Encoding.UTF8));
+			context.AddSource(nameof(MapClassToAttribute), SourceText.From(MapClassToAttribute, Encoding.UTF8));
+			context.AddSource(nameof(MapClassFromAttribute), SourceText.From(MapClassFromAttribute, Encoding.UTF8));
+			context.AddSource(nameof(MapMemberToAttribute), SourceText.From(MapMemberToAttribute, Encoding.UTF8));
+			context.AddSource(nameof(MapMemberFromAttribute), SourceText.From(MapMemberFromAttribute, Encoding.UTF8));
 
 			if (!(context.SyntaxReceiver is SyntaxReceiver receiver))
 				return;
 
 			// create a new compilation that contains the attribute
 			var options = (context.Compilation as CSharpCompilation).SyntaxTrees[0].Options as CSharpParseOptions;
-			var compilation = context.Compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(SourceText.From(MapClassToAttributeText, Encoding.UTF8), options));
-			compilation = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(SourceText.From(MapPropertyToAttributeText, Encoding.UTF8), options));
+			var compilation = context.Compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(SourceText.From(MapClassToAttribute, Encoding.UTF8), options));
+			compilation = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(SourceText.From(MapMemberToAttribute, Encoding.UTF8), options));
+			compilation = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(SourceText.From(MapClassFromAttribute, Encoding.UTF8), options));
+			compilation = compilation.AddSyntaxTrees(CSharpSyntaxTree.ParseText(SourceText.From(MapMemberFromAttribute, Encoding.UTF8), options));
 
 			// get the newly bound attribute
-			var classAttributeSymbol = compilation.GetTypeByMetadataName("FireMap.MapClassToAttribute");
-			var propAttributeSymbol = compilation.GetTypeByMetadataName("FireMap.MapMemberToAttribute");
+			var classToAttributeSymbol = compilation.GetTypeByMetadataName("FireMap.MapClassToAttribute");
+			var propToAttributeSymbol = compilation.GetTypeByMetadataName("FireMap.MapMemberToAttribute");
+			var classFromAttributeSymbol = compilation.GetTypeByMetadataName("FireMap.MapClassFromAttribute");
+			var propFromAttributeSymbol = compilation.GetTypeByMetadataName("FireMap.MapMemberFromAttribute");
 
 			var classSource = new StringBuilder(@"
 namespace FireMap
@@ -118,7 +124,7 @@ namespace FireMap
 
 			foreach(var classSyntax in receiver.Classes)
 			{
-				var (classMethods, interfaceMethods) = BuildMap(compilation, classSyntax, classAttributeSymbol, propAttributeSymbol);
+				var (classMethods, interfaceMethods) = BuildMap(compilation, classSyntax, classToAttributeSymbol, propToAttributeSymbol, classFromAttributeSymbol, propFromAttributeSymbol);
 
 				classSource.AppendLine(classMethods);
 				interfaceSource.AppendLine(interfaceMethods);
@@ -135,7 +141,8 @@ namespace FireMap
 			context.AddSource("Mapping.cs", SourceText.From(classSource.ToString(), Encoding.UTF8));
 		}
 
-		protected (string classMethods, string interfaceMethods) BuildMap(Compilation compilation, TypeDeclarationSyntax sourceSyntax, INamedTypeSymbol classAttributeSymbol, INamedTypeSymbol propertyAttributeSymbol)
+		protected (string classMethods, string interfaceMethods) BuildMap(Compilation compilation, TypeDeclarationSyntax sourceSyntax, INamedTypeSymbol classToAttributeSymbol,
+			INamedTypeSymbol propertyToAttributeSymbol, INamedTypeSymbol classFromAttributeSymbol, INamedTypeSymbol propertyFromAttributeSymbol)
 		{
 			var classBuilder = new StringBuilder();
 			var interfaceBuilder = new StringBuilder();
@@ -150,7 +157,20 @@ namespace FireMap
 				// TODO: Could issue a diagnostic message that the class must be top level
 			}
 
-			var mapRecords = GetMapToRecords(sourceSymbol, classAttributeSymbol, propertyAttributeSymbol);
+			var mapToRecords = GetMapToRecords(sourceSymbol, classToAttributeSymbol, propertyToAttributeSymbol);
+			var mapFromRecords = GetMapFromRecords(sourceSymbol, classFromAttributeSymbol, propertyFromAttributeSymbol);
+
+			var mapRecords = mapToRecords.Concat(mapFromRecords).Aggregate(new Dictionary<string, MappingRecord>(), (dict, current) =>
+			{
+				string key = $"{current.Source.ToDisplayString()}|{current.Destination.ToDisplayString()}";
+
+				if (!dict.ContainsKey(key))
+				{
+					dict.Add(key, current);
+				}
+
+				return dict;
+			}).Values;
 
 			foreach(var record in mapRecords)
 			{
@@ -206,38 +226,11 @@ namespace FireMap
 			{
 				var destinationArgument = classAttribute.ConstructorArguments.First();
 				var destinationSymbol = (destinationArgument.Value as INamedTypeSymbol).OriginalDefinition;
-				var destinationmembers = destinationSymbol.GetMembers();
+				var destinationMembers = destinationSymbol.GetMembers();
 
 				bool reverse = ((bool?)classAttribute.NamedArguments.FirstOrDefault(kv => kv.Key == "Reverse").Value.Value) == true;
 
-				var members = new List<(string source, string destination)>();
-
-				foreach (var sourceMember in sourceMembers)
-				{
-					if (sourceMember.IsImplicitlyDeclared || sourceMember.IsStatic || sourceMember.DeclaredAccessibility != Accessibility.Public
-					|| (sourceMember.Kind != SymbolKind.Field && sourceMember.Kind != SymbolKind.Property))
-						continue;
-
-					var memberAttribute = sourceMember.GetAttributes().FirstOrDefault(a =>
-					{
-						var destinationAttribute = a.ConstructorArguments.First();
-						var symbol = destinationAttribute.Value as INamedTypeSymbol;
-
-						return a.AttributeClass.Equals(mapMemberToAttributeSymbol, SymbolEqualityComparer.Default)
-							&& symbol.Equals(destinationSymbol, SymbolEqualityComparer.Default);
-					});
-
-					if (memberAttribute != null)
-					{
-						var name = memberAttribute.NamedArguments.FirstOrDefault(na => na.Key == "Name").Value.Value as string;
-
-						members.Add((sourceMember.Name, name));
-					}
-					else if (destinationmembers.Any(dm => dm.Name == sourceMember.Name))
-					{
-						members.Add((sourceMember.Name, sourceMember.Name));
-					}
-				}
+				var members = MapMembers(sourceMembers, destinationSymbol, destinationMembers, mapMemberToAttributeSymbol);
 
 				records.Add(new MappingRecord
 				{
@@ -258,6 +251,95 @@ namespace FireMap
 			}
 
 			return records;
+		}
+
+		protected IEnumerable<MappingRecord> GetMapFromRecords(INamedTypeSymbol sourceSymbol, INamedTypeSymbol mapFromAttributeSymbol, INamedTypeSymbol mapMemberFromAttributeSymbol)
+		{
+			var classAttributes = sourceSymbol.GetAttributes().Where(a => a.AttributeClass.Equals(mapFromAttributeSymbol, SymbolEqualityComparer.Default));
+			var records = new List<MappingRecord>();
+
+			var sourceMembers = sourceSymbol.GetMembers();
+
+			foreach (var classAttribute in classAttributes)
+			{
+				var destinationArgument = classAttribute.ConstructorArguments.First();
+				var destinationSymbol = (destinationArgument.Value as INamedTypeSymbol).OriginalDefinition;
+				var destinationMembers = destinationSymbol.GetMembers();
+
+				var members = MapMembers(sourceMembers, destinationSymbol, destinationMembers, mapMemberFromAttributeSymbol);
+
+				//var members = new List<(string source, string destination)>();
+
+				//foreach (var sourceMember in sourceMembers)
+				//{
+				//	if (sourceMember.IsImplicitlyDeclared || sourceMember.IsStatic || sourceMember.DeclaredAccessibility != Accessibility.Public
+				//	|| (sourceMember.Kind != SymbolKind.Field && sourceMember.Kind != SymbolKind.Property))
+				//		continue;
+
+				//	var memberAttribute = sourceMember.GetAttributes().FirstOrDefault(a =>
+				//	{
+				//		var destinationAttribute = a.ConstructorArguments.First();
+				//		var symbol = destinationAttribute.Value as INamedTypeSymbol;
+
+				//		return a.AttributeClass.Equals(mapMemberFromAttributeSymbol, SymbolEqualityComparer.Default)
+				//			&& symbol.Equals(destinationSymbol, SymbolEqualityComparer.Default);
+				//	});
+
+				//	if (memberAttribute != null)
+				//	{
+				//		var name = memberAttribute.NamedArguments.FirstOrDefault(na => na.Key == "Name").Value.Value as string;
+
+				//		members.Add((name, sourceMember.Name));
+				//	}
+				//	else if (destinationmembers.Any(dm => dm.Name == sourceMember.Name))
+				//	{
+				//		members.Add((sourceMember.Name, sourceMember.Name));
+				//	}
+				//}
+
+				records.Add(new MappingRecord
+				{
+					Source = destinationSymbol,
+					Destination = sourceSymbol,
+					Members = members.Select(t => (t.destination, t.source))
+				});
+			}
+
+			return records;
+		}
+
+		protected IEnumerable<(string source, string destination)> MapMembers(IEnumerable<ISymbol> sourceMembers, INamedTypeSymbol destinationSymbol, IEnumerable<ISymbol> destinationMembers, INamedTypeSymbol memberAttributeSymbol)
+		{
+			var members = new List<(string source, string destination)>();
+
+			foreach (var sourceMember in sourceMembers)
+			{
+				if (sourceMember.IsImplicitlyDeclared || sourceMember.IsStatic || sourceMember.DeclaredAccessibility != Accessibility.Public
+				|| (sourceMember.Kind != SymbolKind.Field && sourceMember.Kind != SymbolKind.Property))
+					continue;
+
+				var memberAttribute = sourceMember.GetAttributes().FirstOrDefault(a =>
+				{
+					var destinationAttribute = a.ConstructorArguments.First();
+					var symbol = destinationAttribute.Value as INamedTypeSymbol;
+
+					return a.AttributeClass.Equals(memberAttributeSymbol, SymbolEqualityComparer.Default)
+						&& symbol.Equals(destinationSymbol, SymbolEqualityComparer.Default);
+				});
+
+				if (memberAttribute != null)
+				{
+					var name = memberAttribute.NamedArguments.FirstOrDefault(na => na.Key == "Name").Value.Value as string;
+
+					members.Add((sourceMember.Name, name));
+				}
+				else if (destinationMembers.Any(dm => dm.Name == sourceMember.Name))
+				{
+					members.Add((sourceMember.Name, sourceMember.Name));
+				}
+			}
+
+			return members;
 		}
 	}
 }
