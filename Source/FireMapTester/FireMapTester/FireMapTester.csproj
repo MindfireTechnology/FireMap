@@ -1,18 +1,15 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
+	<PropertyGroup>
 	<OutputType>Exe</OutputType>
 	<TargetFramework>netcoreapp3.1</TargetFramework>
-	  <LangVersion>preview</LangVersion>
-	  <AssemblyName>Tester</AssemblyName>
-	  <RootNamespace>Tester</RootNamespace>
-  </PropertyGroup>
-
-  <ItemGroup>
-    <PackageReference Include="Shouldly" Version="3.0.2" />
-  </ItemGroup>
+		<LangVersion>preview</LangVersion>
+		<AssemblyName>Tester</AssemblyName>
+		<RootNamespace>Tester</RootNamespace>
+	</PropertyGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\..\FireMap\FireMap\FireMap.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+		<PackageReference Include="FireMap" Version="1.0.3-alpha" />
+		<PackageReference Include="Shouldly" Version="3.0.2" />
 	</ItemGroup>
 </Project>

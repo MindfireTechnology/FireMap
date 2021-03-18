@@ -81,12 +81,12 @@ namespace FireMap
 }
 ";
 
-		public void Initialize(InitializationContext context)
+		public void Initialize(GeneratorInitializationContext context)
 		{
 			context.RegisterForSyntaxNotifications(() => new SyntaxReceiver());
 		}
 
-		public void Execute(SourceGeneratorContext context)
+		public void Execute(GeneratorExecutionContext context)
 		{
 			context.AddSource(nameof(MapClassToAttribute), SourceText.From(MapClassToAttribute, Encoding.UTF8));
 			context.AddSource(nameof(MapClassFromAttribute), SourceText.From(MapClassFromAttribute, Encoding.UTF8));
