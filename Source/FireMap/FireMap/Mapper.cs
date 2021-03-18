@@ -189,7 +189,7 @@ namespace FireMap
 			var sourceMembers = record.Source.GetMembers();
 			var destinationMembers = record.Destination.GetMembers();
 
-			var methodSignature = $"{record.Destination.ToDisplayString()} To{record.Destination.ToDisplayString().Replace(".", "_")}({record.Source.ToDisplayString()} source)";
+			var methodSignature = $"{record.Destination.ToDisplayString()} To{record.Destination.ToDisplayString().Replace(".", "")}({record.Source.ToDisplayString()} source)";
 			string interfaceMethod = $@"
 		/// <summary>Convert from {record.Source.ToDisplayString()} to {record.Destination.ToDisplayString()}</summary>
 		{methodSignature};
