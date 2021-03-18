@@ -28,7 +28,7 @@ namespace Tester
 				Phone = "555-555-5555",
 				ZipCode = "12345"
 			};
-
+			
 			var entity = Mapper.ToTester_Models_SimpleUserEntity(dto);
 
 			entity.Id.ShouldBe(dto.Id);

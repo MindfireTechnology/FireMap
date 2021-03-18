@@ -10,8 +10,17 @@ using System.Text;
 namespace FireMap
 {
 	[Generator]
-	public class Mapper : ISourceGenerator
+	public class MapperGenerator : ISourceGenerator
 	{
+
+		private static readonly DiagnosticDescriptor NestedClassWarning = new DiagnosticDescriptor(
+			id: "FIREMAPGEN001",
+			title: "Nested Classes Are Not Supported",
+			messageFormat: "Classes that are defined inside of another class (nested classes) are not supported",
+			category: "FireMapGenerator",
+			DiagnosticSeverity.Warning,
+			isEnabledByDefault: true);
+
 		protected const string MapClassToAttribute = @"
 using System;
 namespace FireMap
@@ -20,7 +29,9 @@ namespace FireMap
 	public sealed class MapClassToAttribute : Attribute
 	{
 		public Type MappingType { get; }
-		public bool Reverse {get; set; }
+		public bool Reverse { get; set; }
+		public string MethodName { get; set; }
+		public string ReverseMethodName { get; set; }
 
 		public MapClassToAttribute(Type mappingType)
 		{
@@ -124,7 +135,7 @@ namespace FireMap
 
 			foreach(var classSyntax in receiver.Classes)
 			{
-				var (classMethods, interfaceMethods) = BuildMap(compilation, classSyntax, classToAttributeSymbol, propToAttributeSymbol, classFromAttributeSymbol, propFromAttributeSymbol);
+				var (classMethods, interfaceMethods) = BuildMap(context, compilation, classSyntax, classToAttributeSymbol, propToAttributeSymbol, classFromAttributeSymbol, propFromAttributeSymbol);
 
 				classSource.AppendLine(classMethods);
 				interfaceSource.AppendLine(interfaceMethods);
@@ -137,12 +148,18 @@ namespace FireMap
 	}
 }");
 
-			context.AddSource("IMapping.cs", SourceText.From(interfaceSource.ToString(), Encoding.UTF8));
-			context.AddSource("Mapping.cs", SourceText.From(classSource.ToString(), Encoding.UTF8));
+			context.AddSource("IMapper.cs", SourceText.From(interfaceSource.ToString(), Encoding.UTF8));
+			context.AddSource("Mapper.cs", SourceText.From(classSource.ToString(), Encoding.UTF8));
 		}
 
-		protected (string classMethods, string interfaceMethods) BuildMap(Compilation compilation, TypeDeclarationSyntax sourceSyntax, INamedTypeSymbol classToAttributeSymbol,
-			INamedTypeSymbol propertyToAttributeSymbol, INamedTypeSymbol classFromAttributeSymbol, INamedTypeSymbol propertyFromAttributeSymbol)
+		protected (string classMethods, string interfaceMethods) BuildMap(
+			GeneratorExecutionContext context,
+			Compilation compilation, 
+			TypeDeclarationSyntax sourceSyntax, 
+			INamedTypeSymbol classToAttributeSymbol,
+			INamedTypeSymbol propertyToAttributeSymbol, 
+			INamedTypeSymbol classFromAttributeSymbol, 
+			INamedTypeSymbol propertyFromAttributeSymbol)
 		{
 			var classBuilder = new StringBuilder();
 			var interfaceBuilder = new StringBuilder();
@@ -150,11 +167,11 @@ namespace FireMap
 			var sourceModel = compilation.GetSemanticModel(sourceSyntax.SyntaxTree);
 			var sourceSymbol = sourceModel.GetDeclaredSymbol(sourceSyntax);
 
-			// Only work with top - level classes. Can remove if we want to support nested classes
+			// Only work with top-level classes. Can remove if we want to support nested classes
 			if (!sourceSymbol.ContainingSymbol.Equals(sourceSymbol.ContainingNamespace, SymbolEqualityComparer.Default))
 			{
+				context.ReportDiagnostic(Diagnostic.Create(NestedClassWarning, Location.None, sourceSymbol.Name));
 				return (string.Empty, string.Empty);
-				// TODO: Could issue a diagnostic message that the class must be top level
 			}
 
 			var mapToRecords = GetMapToRecords(sourceSymbol, classToAttributeSymbol, propertyToAttributeSymbol);
@@ -189,7 +206,13 @@ namespace FireMap
 			var sourceMembers = record.Source.GetMembers();
 			var destinationMembers = record.Destination.GetMembers();
 
-			var methodSignature = $"{record.Destination.ToDisplayString()} To{record.Destination.ToDisplayString().Replace(".", "")}({record.Source.ToDisplayString()} source)";
+			
+			string methodName = string.IsNullOrWhiteSpace(record.MethodName) ? 
+				$"To{ record.Destination.ToDisplayString().ShortTypeName()}" :
+				record.MethodName;
+
+			var methodSignature = $"{record.Destination.ToDisplayString()} {methodName}({record.Source.ToDisplayString()} source)";
+
 			string interfaceMethod = $@"
 		/// <summary>Convert from {record.Source.ToDisplayString()} to {record.Destination.ToDisplayString()}</summary>
 		{methodSignature};
@@ -197,17 +220,15 @@ namespace FireMap
 
 			classBuilder.AppendLine($@"
 		public virtual {methodSignature} => new {record.Destination.ToDisplayString()}
-		{{
-");
+		{{");
 
 			var assignments = new List<string>();
 			foreach(var member in record.Members)
 			{
-				assignments.Add($"{member.destinationMember} = source.{member.sourceMember}");
+				assignments.Add($"\t\t\t{member.destinationMember} = source.{member.sourceMember}");
 			}
 
-			classBuilder.AppendLine($@"
-			{string.Join(@",
+			classBuilder.AppendLine($@"{string.Join(@",
 ", assignments)}
 		}};
 ");
@@ -228,6 +249,8 @@ namespace FireMap
 				var destinationSymbol = (destinationArgument.Value as INamedTypeSymbol).OriginalDefinition;
 				var destinationMembers = destinationSymbol.GetMembers();
 
+				string methodName = classAttribute.NamedArguments.FirstOrDefault(k => k.Key == "MethodName").Value.Value as string;
+				string reverseMethodName = classAttribute.NamedArguments.FirstOrDefault(k => k.Key == "ReverseMethodName").Value.Value as string;
 				bool reverse = ((bool?)classAttribute.NamedArguments.FirstOrDefault(kv => kv.Key == "Reverse").Value.Value) == true;
 
 				var members = MapMembers(sourceMembers, destinationSymbol, destinationMembers, mapMemberToAttributeSymbol);
@@ -236,6 +259,7 @@ namespace FireMap
 				{
 					Source = sourceSymbol,
 					Destination = destinationSymbol,
+					MethodName = methodName,
 					Members = members
 				});
 
@@ -245,6 +269,7 @@ namespace FireMap
 					{
 						Source = destinationSymbol,
 						Destination = sourceSymbol,
+						MethodName = reverseMethodName,
 						Members = members.Select(t => (t.destination, t.source))
 					});
 				}

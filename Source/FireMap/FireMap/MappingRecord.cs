@@ -9,6 +9,7 @@ namespace FireMap
 	{
 		public INamedTypeSymbol Source { get; set; }
 		public INamedTypeSymbol Destination { get; set; }
+		public string MethodName { get; set; } = null;
 		public IEnumerable<(string sourceMember, string destinationMember)> Members { get; set; }
 	}
 }
