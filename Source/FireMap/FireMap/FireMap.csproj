@@ -17,6 +17,13 @@
 
 		<!-- Do not include the generator as a lib dependency -->
 		<IncludeBuildOutput>false</IncludeBuildOutput>
+		<PackageProjectUrl>https://github.com/MindfireTechnology/FireMap</PackageProjectUrl>
+		<RepositoryUrl>https://github.com/MindfireTechnology/FireMap</RepositoryUrl>
+		<RepositoryType>git</RepositoryType>
+		<Copyright />
+		<Authors>Dan Beus, Nate Zaugg</Authors>
+		<Company>Mindfire Technology</Company>
+		<PackageIcon>Logo.png</PackageIcon>
 	</PropertyGroup>
 
 	<PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
@@ -39,6 +46,10 @@
 
 	<ItemGroup>
 		<None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+		<None Include="..\..\..\Resources\Logo.png">
+		  <Pack>True</Pack>
+		  <PackagePath></PackagePath>
+		</None>
 	</ItemGroup>
 
 </Project>
