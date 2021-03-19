@@ -6,7 +6,7 @@
 		<LangVersion>9</LangVersion>
 
 		<AssemblyName>FireMap</AssemblyName>
-		<Version>1.0.5-alpha</Version>
+		<Version>1.0.6</Version>
 		<Description>Firemap is a source generator that generates mappings between objects. The mappings are created at compile time and are therefore super fast and reflection-free.</Description>
 		<PackageTags>CodeGenerators, Mapper</PackageTags>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>

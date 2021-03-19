@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using FireMap;
+﻿using FireMap;
 
 namespace Tester.Models
 {
@@ -99,7 +96,7 @@ namespace Tester.Data.Entities
 
 namespace Tester.ViewModels
 {
-	[MapClassTo(typeof(Tester.Models.Order))]
+	[MapClassFrom(typeof(Tester.Models.Order), MethodName = "MapToOrderVM", Reverse = true, ReverseMethodName = "MapToOrderModel")]
 	public class Order
 	{
 		public int Id { get; set; }

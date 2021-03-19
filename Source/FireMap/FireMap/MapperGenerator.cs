@@ -48,6 +48,9 @@ namespace FireMap
 	public sealed class MapClassFromAttribute : Attribute
 	{
 		public Type MappingType { get; }
+		public bool Reverse { get; set; }
+		public string MethodName { get; set; }
+		public string ReverseMethodName { get; set; }
 
 		public MapClassFromAttribute(Type mappingType)
 		{
@@ -291,43 +294,30 @@ namespace FireMap
 				var destinationSymbol = (destinationArgument.Value as INamedTypeSymbol).OriginalDefinition;
 				var destinationMembers = destinationSymbol.GetMembers();
 
+				string methodName = classAttribute.NamedArguments.FirstOrDefault(k => k.Key == "MethodName").Value.Value as string;
+				string reverseMethodName = classAttribute.NamedArguments.FirstOrDefault(k => k.Key == "ReverseMethodName").Value.Value as string;
+				bool reverse = ((bool?)classAttribute.NamedArguments.FirstOrDefault(kv => kv.Key == "Reverse").Value.Value) == true;
+
 				var members = MapMembers(sourceMembers, destinationSymbol, destinationMembers, mapMemberFromAttributeSymbol);
-
-				//var members = new List<(string source, string destination)>();
-
-				//foreach (var sourceMember in sourceMembers)
-				//{
-				//	if (sourceMember.IsImplicitlyDeclared || sourceMember.IsStatic || sourceMember.DeclaredAccessibility != Accessibility.Public
-				//	|| (sourceMember.Kind != SymbolKind.Field && sourceMember.Kind != SymbolKind.Property))
-				//		continue;
-
-				//	var memberAttribute = sourceMember.GetAttributes().FirstOrDefault(a =>
-				//	{
-				//		var destinationAttribute = a.ConstructorArguments.First();
-				//		var symbol = destinationAttribute.Value as INamedTypeSymbol;
-
-				//		return a.AttributeClass.Equals(mapMemberFromAttributeSymbol, SymbolEqualityComparer.Default)
-				//			&& symbol.Equals(destinationSymbol, SymbolEqualityComparer.Default);
-				//	});
-
-				//	if (memberAttribute != null)
-				//	{
-				//		var name = memberAttribute.NamedArguments.FirstOrDefault(na => na.Key == "Name").Value.Value as string;
-
-				//		members.Add((name, sourceMember.Name));
-				//	}
-				//	else if (destinationmembers.Any(dm => dm.Name == sourceMember.Name))
-				//	{
-				//		members.Add((sourceMember.Name, sourceMember.Name));
-				//	}
-				//}
 
 				records.Add(new MappingRecord
 				{
 					Source = destinationSymbol,
 					Destination = sourceSymbol,
+					MethodName = methodName,
 					Members = members.Select(t => (t.destination, t.source))
 				});
+
+				if (reverse)
+				{
+					records.Add(new MappingRecord
+					{
+						Source = sourceSymbol,
+						Destination = destinationSymbol,
+						MethodName = reverseMethodName,
+						Members = members.Select(t => (t.destination, t.source))
+					});
+				}
 			}
 
 			return records;

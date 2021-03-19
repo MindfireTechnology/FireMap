@@ -25,7 +25,8 @@ namespace FireMap.Tests
 
 			// Assert
 			diagnostics.IsDefaultOrEmpty.ShouldBeTrue();
-			outputCompilation.GetDiagnostics().IsEmpty.ShouldBeTrue();
+			var outputDiag = outputCompilation.GetDiagnostics();
+			outputDiag.IsEmpty.ShouldBeTrue();
 
 			var iface = outputCompilation.SyntaxTrees.SingleOrDefault(st => st.FilePath.EndsWith("\\IMapper.cs"));
 			var cls = outputCompilation.SyntaxTrees.SingleOrDefault(st => st.FilePath.EndsWith("\\Mapper.cs"));
@@ -43,7 +44,7 @@ namespace FireMap.Tests
 			=> CSharpCompilation.Create("compilation",
 				new[] { CSharpSyntaxTree.ParseText(source) },
 				new[] { MetadataReference.CreateFromFile(typeof(Binder).GetTypeInfo().Assembly.Location) },
-				new CSharpCompilationOptions(OutputKind.ConsoleApplication));
+				new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 	}
 
 
